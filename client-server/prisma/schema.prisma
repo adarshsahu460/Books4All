@@ -1,0 +1,69 @@
+generator client {
+  provider = "prisma-client-js"
+  output = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model UserInfo {
+  id          Int      @id @default(autoincrement())
+  name        String
+  address     String
+  password    String
+  email       String   @unique
+  latitude    Float?
+  longitude   Float?
+  phone       String
+  type        UserType?
+  donated     DonorBook[]
+  requested   ClientBook[]
+  transactionsCompleted Transaction[] @relation("NGO")
+}
+
+model DonorBook {
+  id          Int      @id @default(autoincrement())
+  D_id        Int
+  ISBN        String
+  qty         Int
+  age         Int
+  category    String
+  book_name   String
+  img_link    String?
+  donor       UserInfo @relation(fields: [D_id], references: [id])
+  transactions Transaction[] @relation("DonorTransaction")
+}
+
+model ClientBook {
+  id          Int      @id @default(autoincrement())
+  C_id        Int
+  ISBN        String
+  qty         Int
+  client      UserInfo @relation(fields: [C_id], references: [id])
+  transactions Transaction[] @relation("ClientTransaction")
+}
+
+model Transaction {
+  id            Int      @id @default(autoincrement())
+  donorBookId   Int
+  clientBookId  Int
+  NGO_id        Int
+  qty           Int
+  status        Status
+  ngo           UserInfo   @relation("NGO", fields: [NGO_id], references: [id])
+  donorBook     DonorBook  @relation("DonorTransaction", fields: [donorBookId], references: [id])
+  clientBook    ClientBook @relation("ClientTransaction", fields: [clientBookId], references: [id])
+}
+
+enum UserType {
+  DONOR
+  CLIENT
+  NGO
+}
+
+enum Status {
+  COMPLETED
+  OTW
+}
