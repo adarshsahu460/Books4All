@@ -5,6 +5,7 @@ import requests
 import json
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from dotenv import load_dotenv
 
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:3000"])  # Ensure this matches your frontend URL
@@ -14,7 +15,7 @@ CORS(app, origins=["http://localhost:3000"])  # Ensure this matches your fronten
 reader = easyocr.Reader(['en'])
 
 # API Keys & URLs
-GEMINI_API_KEY = "AIzaSyDUiGaPe5E_MdLoS7mUYJUY-Mg4ONYmhcc"
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 GOOGLE_BOOKS_API = "https://www.googleapis.com/books/v1/volumes?q="
 
 def extract_text(image_path: str) -> str:
