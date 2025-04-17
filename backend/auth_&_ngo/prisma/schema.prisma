@@ -1,0 +1,58 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model UserInfo {
+  id          Int      @id @default(autoincrement())
+  name        String
+  address     String
+  password    String
+  email       String   @unique
+  latitude    Float?
+  longitude   Float?
+  phone       String
+  type        String
+  donated     DonorBook[]
+  requested   ClientBook[]
+  transactionsAsNGO      TransactionTable[] @relation("NGO")
+  transactionsAsDonor    TransactionTable[] @relation("Donor")
+  transactionsAsClient   TransactionTable[] @relation("Client")
+}
+
+model DonorBook {
+  id          Int      @id @default(autoincrement())
+  D_id        Int
+  ISBN        String
+  qty         Int
+  age         Int
+  category    String
+  book_name   String
+  img_link    String?
+  donor       UserInfo @relation(fields: [D_id], references: [id], onDelete: Cascade)
+}
+
+model ClientBook {
+  id          Int      @id @default(autoincrement())
+  C_id        Int
+  ISBN        String
+  qty         Int
+  client      UserInfo @relation(fields: [C_id], references: [id], onDelete: Cascade)
+}
+
+model TransactionTable {
+  id          Int      @id @default(autoincrement())
+  donor_id    Int
+  client_id   Int
+  NGO_id      Int
+  qty         Int
+  status      String @default("pending")
+
+  donor       UserInfo @relation("Donor", fields: [donor_id], references: [id], onDelete: Cascade)
+  client      UserInfo @relation("Client", fields: [client_id], references: [id], onDelete: Cascade)
+  ngo         UserInfo @relation("NGO", fields: [NGO_id], references: [id])
+}

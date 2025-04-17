@@ -1,0 +1,72 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model UserInfo {
+  id          Int      @id @default(autoincrement())
+  name        String
+  address     String
+  password    String
+  email       String   @unique
+  latitude    Float?
+  longitude   Float?
+  phone       String
+  type        String
+  donated     DonorBook[]
+  requested   ClientBook[]
+  transactionsCompleted TransactionTable[] @relation("NGO")
+}
+
+model DonorBook {
+  id          Int      @id @default(autoincrement())
+  D_id        Int
+  ISBN        String
+  qty         Int
+  age         Int
+  category    String
+  book_name   String
+  img_link    String?
+  donor       UserInfo @relation(fields: [D_id], references: [id])
+  transactions TransactionTable[] @relation("DonorTransaction")
+}
+
+model Rewards {
+  id          Int     @id @default(autoincrement())
+  D_id        Int
+  count       Int     
+}
+
+model ClientBook {
+  id          Int      @id @default(autoincrement())
+  C_id        Int
+  ISBN        String
+  qty         Int
+  client      UserInfo @relation(fields: [C_id], references: [id])
+  transactions TransactionTable[] @relation("ClientTransaction")
+}
+
+model TransactionTable {
+  id            Int      @id @default(autoincrement())
+  donorBookId   Int
+  clientBookId  Int
+  NGO_id        Int
+  qty           Int
+  status        String @default("pending")
+  ngo           UserInfo   @relation("NGO", fields: [NGO_id], references: [id])
+  donorBook     DonorBook  @relation("DonorTransaction", fields: [donorBookId], references: [id])
+  clientBook    ClientBook @relation("ClientTransaction", fields: [clientBookId], references: [id])
+}
+
+
+ 
