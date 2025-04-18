@@ -1,0 +1,6 @@
+opencv-python
+easyocr
+requests
+flask
+flask-cors
+python-dotenv
