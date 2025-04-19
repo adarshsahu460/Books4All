@@ -1,7 +1,40 @@
 const { PrismaClient } = require('@prisma/client');
 const { default: axios } = require('axios');
+const jwt = require('jsonwebtoken');
+const jwksClient = require('jwks-rsa');
+require('dotenv').config();
 
 const prisma = new PrismaClient();
+
+// JWT validation middleware
+const client = jwksClient({
+  jwksUri: `${process.env.KEYCLOAK_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/certs`,
+});
+
+function getKey(header, callback) {
+  client.getSigningKey(header.kid, (err, key) => {
+    const signingKey = key?.publicKey || key?.rsaPublicKey;
+    callback(null, signingKey);
+  });
+}
+
+const verifyToken = async () => {
+  const token = process.env.SYSTEM_TOKEN?.split(' ')[1];
+  if (!token) throw new Error('No token provided');
+  
+  return new Promise((resolve, reject) => {
+    jwt.verify(token, getKey, { algorithms: ['RS256'] }, (err, decoded) => {
+      if (err) reject(new Error('Invalid token'));
+      resolve(decoded);
+    });
+  });
+};
+
+// Verify token once at startup for system-level access
+verifyToken().catch((e) => {
+  console.error('Token verification failed:', e);
+  process.exit(1);
+});
 
 const haversineDistance = (lat1, lon1, lat2, lon2) => {
     const toRadians = (degree) => (degree * Math.PI) / 180;
@@ -18,35 +51,34 @@ const haversineDistance = (lat1, lon1, lat2, lon2) => {
 };
 
 async function processTransactions() {
-    console.log("Starting batch transaction processing...");
+    console.log('Starting batch transaction processing...');
 
     const clientBooks = await prisma.clientBook.findMany({
-        include: { client: true } // Fetch client location
+        include: { client: true }
     });
 
     for (const clientBook of clientBooks) {
         const { latitude: clientLat, longitude: clientLon } = clientBook.client;
         let donorBooks = await prisma.donorBook.findMany({
             where: { ISBN: clientBook.ISBN },
-            include: { donor: true } // Fetch donor location
+            include: { donor: true }
         });
 
-        // Sort donors based on distance from client
         donorBooks = donorBooks
             .map(donor => ({
                 ...donor,
                 distance: haversineDistance(clientLat, clientLon, donor.donor.latitude, donor.donor.longitude)
             }))
-            .sort((a, b) => a.distance - b.distance); // Sort ascending
+            .sort((a, b) => a.distance - b.distance);
 
         for (const donorBook of donorBooks) {
             if (clientBook.qty > 0 && donorBook.qty > 0) {
                 const transferQty = Math.min(clientBook.qty, donorBook.qty);
 
-                const ngo = await prisma.userInfo.findFirst({ where: { type: "ngo" } });
+                const ngo = await prisma.userInfo.findFirst({ where: { type: 'ngo' } });
 
                 if (!ngo) {
-                    console.error("No NGO found. Skipping transaction.");
+                    console.error('No NGO found. Skipping transaction.');
                     continue;
                 }
 
@@ -56,23 +88,23 @@ async function processTransactions() {
                         client_id: clientBook.C_id,
                         NGO_id: ngo.id,
                         qty: transferQty,
-                        status: "pending"
+                        status: 'pending'
                     }
                 });
 
                 console.log(`Transaction created: ${transferQty} books transferred from donor ${donorBook.D_id} to client ${clientBook.C_id}`);
                 const client = await prisma.userInfo.findUnique({ where: { id: clientBook.C_id } });
                 const donor = await prisma.userInfo.findUnique({ where: { id: donorBook.D_id } });
-                axios.post("http://10.6.79.38:3000/send-messages",
-                    {
-                        "numbers": ["91"+client.phone, "91"+donor.phone],
-                        "emails": [client.email, donor.email],
-                        "messages":[`Hello ${client.name}, ${donor.name}, your transaction of ${transferQty} books is pending.`,
-                            `Hello ${client.name}, ${donor.name}, your transaction of ${transferQty} books is pending.`]
-    ,
-                        "subject": "Test Email"
-                    }
-                )
+                await axios.post('http://middleware:3000/send-messages', {
+                    numbers: ['91' + client.phone, '91' + donor.phone],
+                    emails: [client.email, donor.email],
+                    messages: [
+                        `Hello ${client.name}, ${donor.name}, your transaction of ${transferQty} books is pending.`,
+                        `Hello ${client.name}, ${donor.name}, your transaction of ${transferQty} books is pending.`
+                    ],
+                    subject: 'Test Email'
+                });
+
                 await prisma.donorBook.update({
                     where: { id: donorBook.id },
                     data: { qty: donorBook.qty - transferQty }
@@ -96,13 +128,12 @@ async function processTransactions() {
         }
     }
 
-    console.log("Batch processing completed.");
+    console.log('Batch processing completed.');
 }
-
 
 processTransactions()
     .catch((e) => {
-        console.error("Error processing transactions:", e);
+        console.error('Error processing transactions:', e);
         process.exit(1);
     })
     .finally(async () => {

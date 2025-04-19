@@ -2,11 +2,42 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const { PrismaClient } = require('@prisma/client');
+const jwt = require('jsonwebtoken');
+const jwksClient = require('jwks-rsa');
+const ensureUserInDb = require('./middleware/ensureUserInDb');
+
 const app = express();
 const prisma = new PrismaClient();
 app.use(express.json());
-app.use(cors())
-require('dotenv').config(); 
+app.use(cors());
+require('dotenv').config();
+
+// JWT validation middleware
+const client = jwksClient({
+  jwksUri: `${process.env.KEYCLOAK_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/certs`,
+});
+
+function getKey(header, callback) {
+  client.getSigningKey(header.kid, (err, key) => {
+    const signingKey = key?.publicKey || key?.rsaPublicKey;
+    callback(null, signingKey);
+  });
+}
+
+const verifyToken = (req, res, next) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).send('No token provided');
+  
+  jwt.verify(token, getKey, { algorithms: ['RS256'] }, (err, decoded) => {
+    if (err) return res.status(401).send('Invalid token');
+    req.user = decoded;
+    next();
+  });
+};
+
+// Apply token validation to all routes
+app.use(verifyToken);
+app.use(ensureUserInDb);
 
 app.get('/api/request/by-name', async (req, res) => {
   try {
@@ -69,15 +100,15 @@ app.get('/api/request/by-isbn', async (req, res) => {
       });
     }
     res.status(200).json({
-      title : axiosResponse.data.items[0].volumeInfo.title,
-      author : axiosResponse.data.items[0].volumeInfo.authors[0],
-      publisher : axiosResponse.data.items[0].volumeInfo.publisher,
-      description : axiosResponse.data.items[0].volumeInfo.description,
-      isbn : isbn,
-      pageCount : axiosResponse.data.items[0].volumeInfo.pageCount,
-      categories : axiosResponse.data.items[0].volumeInfo.categories,
-      language : axiosResponse.data.items[0].volumeInfo.language,
-      image : axiosResponse.data.items[0].volumeInfo.imageLinks.thumbnail,
+      title: axiosResponse.data.items[0].volumeInfo.title,
+      author: axiosResponse.data.items[0].volumeInfo.authors[0],
+      publisher: axiosResponse.data.items[0].volumeInfo.publisher,
+      description: axiosResponse.data.items[0].volumeInfo.description,
+      isbn: isbn,
+      pageCount: axiosResponse.data.items[0].volumeInfo.pageCount,
+      categories: axiosResponse.data.items[0].volumeInfo.categories,
+      language: axiosResponse.data.items[0].volumeInfo.language,
+      image: axiosResponse.data.items[0].volumeInfo.imageLinks.thumbnail,
     });
 
   } catch (error) {
@@ -161,7 +192,7 @@ app.post('/api/client/books', async (req, res) => {
     }
 });
 
-const PORT = process.env.PORT || 5001;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+const port = 5001;
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
 });
