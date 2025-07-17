@@ -3,49 +3,19 @@ const { PrismaClient } = require('@prisma/client');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
-const jwt = require('jsonwebtoken');
-const jwksClient = require('jwks-rsa');
-const ensureUserInDb = require('./middleware/ensureUserInDb');
+const axios = require('axios');
 
 const prisma = new PrismaClient();
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true })); 
+const PYTHON_OCR_SERVICE_URL = 'http://localhost:5004'; 
 
-// JWT validation middleware
-const client = jwksClient({
-  jwksUri: `${process.env.KEYCLOAK_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/certs`,
-});
-
-function getKey(header, callback) {
-  client.getSigningKey(header.kid, (err, key) => {
-    const signingKey = key?.publicKey || key?.rsaPublicKey;
-    callback(null, signingKey);
-  });
-}
-
-const verifyToken = (req, res, next) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return res.status(401).send('No token provided');
-  
-  jwt.verify(token, getKey, { algorithms: ['RS256'] }, (err, decoded) => {
-    if (err) return res.status(401).send('Invalid token');
-    req.user = decoded;
-    next();
-  });
-};
-
-// Apply token validation to all routes
-app.use(verifyToken);
-app.use(ensureUserInDb);
-
-// Route to handle donor book creation
 app.post('/donor-book', async (req, res) => {
   try {
     const { D_id, ISBN, qty, age, category, book_name, img_link } = req.body;
-
-    console.log(req.body);
 
     if (!D_id || !ISBN || !qty || !age || !category || !book_name) {
       return res.status(400).json({ message: 'Missing required fields' });
@@ -70,46 +40,71 @@ app.post('/donor-book', async (req, res) => {
   }
 });
 
-// Route to handle OCR + Book Entry with image upload (base64 file in body)
 app.post('/donor-ocr', async (req, res) => {
   try {
-    const { D_id, ISBN, qty, age, category, book_name, img_link } = req.body;
-
-    if (!D_id || !ISBN || !qty || !age || !category || !book_name) {
-      return res.status(400).json({ message: 'Missing required fields' });
+    const { D_id, img_link } = req.body; 
+    
+    if (!D_id || !img_link) {
+      return res.status(400).json({ message: 'Missing required fields: D_id and img_link' });
     }
 
-    // Decode the base64 string to save as an image
-    let filePath;
-    if (img_link) {
-      const base64Data = img_link.split(',')[1];
-      filePath = path.join(
-        __dirname,
-        'uploads',
-        Date.now() + '-book-image.jpg'
-      );
+    const [mimeTypePart, base64Data] = img_link.split(',');
+    const mimeType = mimeTypePart.split(':')[1].split(';')[0];
+    const buffer = Buffer.from(base64Data, 'base64');
 
-      // Ensure Uploads directory exists
-      fs.mkdirSync(path.dirname(filePath), { recursive: true });
-      fs.writeFileSync(filePath, base64Data, 'base64');
+    const FormData = require('form-data');
+    const form = new FormData();
+    form.append('image', buffer, {
+      filename: `book-image-${Date.now()}.${mimeType.split('/')[1]}`,
+      contentType: mimeType,
+    });
+
+    let ocrResult;
+    try {
+      const pythonResponse = await axios.post(`${PYTHON_OCR_SERVICE_URL}/upload`, form, {
+        headers: {
+          ...form.getHeaders(),
+        },
+        maxBodyLength: Infinity, // Allow large requests
+        maxContentLength: Infinity, // Allow large responses
+      });
+      ocrResult = pythonResponse.data;
+      console.log('OCR Result from Python:', ocrResult);
+
+      if (!ocrResult.title || !ocrResult.author || !ocrResult.category || !ocrResult.isbn) {
+        return res.status(500).json({ message: 'OCR service could not extract all required book details.' });
+      }
+
+    } catch (pythonError) {
+      console.error('Error calling Python OCR service:', pythonError.response ? pythonError.response.data : pythonError.message);
+      return res.status(500).json({ message: 'Failed to process image with OCR service.' });
     }
 
-    // Create the donor book record in the database
+    let filePath = null;
+    try {
+      const uploadDir = path.join(__dirname, 'uploads');
+      fs.mkdirSync(uploadDir, { recursive: true });
+      filePath = path.join(uploadDir, `book-image-${Date.now()}.${mimeType.split('/')[1]}`);
+      fs.writeFileSync(filePath, buffer);
+      console.log('Image saved locally:', filePath);
+    } catch (saveError) {
+      console.error('Error saving image locally:', saveError);
+    }
+
+
     const donorBook = await prisma.donorBook.create({
       data: {
         D_id: parseInt(D_id),
-        ISBN: ISBN,
-        qty: parseInt(qty),
-        age: parseInt(age),
-        category: category,
-        book_name: book_name,
-        img_link: filePath || null,
+        ISBN: ocrResult.isbn,
+        qty: req.body.qty ? parseInt(req.body.qty) : 1, 
+        age: req.body.age ? parseInt(req.body.age) : 0, 
+        category: ocrResult.category,
+        book_name: ocrResult.title,
+        img_link: filePath || null, 
       },
     });
 
-    res
-      .status(201)
-      .json({ message: 'Book added successfully via OCR', donorBook });
+    res.status(201).json({ message: 'Book added successfully via OCR', donorBook });
   } catch (error) {
     console.error('Error processing OCR request:', error);
     res.status(500).json({ message: 'An error occurred', error });

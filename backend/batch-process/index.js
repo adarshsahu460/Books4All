@@ -1,40 +1,8 @@
 const { PrismaClient } = require('@prisma/client');
 const { default: axios } = require('axios');
-const jwt = require('jsonwebtoken');
-const jwksClient = require('jwks-rsa');
 require('dotenv').config();
 
 const prisma = new PrismaClient();
-
-// JWT validation middleware
-const client = jwksClient({
-  jwksUri: `${process.env.KEYCLOAK_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/certs`,
-});
-
-function getKey(header, callback) {
-  client.getSigningKey(header.kid, (err, key) => {
-    const signingKey = key?.publicKey || key?.rsaPublicKey;
-    callback(null, signingKey);
-  });
-}
-
-const verifyToken = async () => {
-  const token = process.env.SYSTEM_TOKEN?.split(' ')[1];
-  if (!token) throw new Error('No token provided');
-  
-  return new Promise((resolve, reject) => {
-    jwt.verify(token, getKey, { algorithms: ['RS256'] }, (err, decoded) => {
-      if (err) reject(new Error('Invalid token'));
-      resolve(decoded);
-    });
-  });
-};
-
-// Verify token once at startup for system-level access
-verifyToken().catch((e) => {
-  console.error('Token verification failed:', e);
-  process.exit(1);
-});
 
 const haversineDistance = (lat1, lon1, lat2, lon2) => {
     const toRadians = (degree) => (degree * Math.PI) / 180;
@@ -84,8 +52,8 @@ async function processTransactions() {
 
                 await prisma.transactionTable.create({
                     data: {
-                        donor_id: donorBook.D_id,
-                        client_id: clientBook.C_id,
+                        donorBookId: donorBook.id,
+                        clientBookId: clientBook.id,
                         NGO_id: ngo.id,
                         qty: transferQty,
                         status: 'pending'

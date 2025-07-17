@@ -1,7 +1,9 @@
 FROM node:18
 WORKDIR /app
+
 COPY package*.json ./
 RUN npm install
+COPY prisma ./prisma
+
 COPY . .
-EXPOSE 5005
-CMD ["node", "index.js"]
+CMD npx prisma generate && node index.js

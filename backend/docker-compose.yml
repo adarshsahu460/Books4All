@@ -1,21 +1,5 @@
 version: '3.8'
 services:
-  keycloak:
-    image: quay.io/keycloak/keycloak:26.2.0
-    environment:
-      - KC_DB=postgres
-      - KC_DB_URL=jdbc:postgresql://db:5432/keycloak
-      - KC_DB_USERNAME=${KC_DB_USERNAME}
-      - KC_DB_PASSWORD=${KC_DB_PASSWORD}
-      - KC_BOOTSTRAP_ADMIN_USERNAME=${KC_BOOTSTRAP_ADMIN_USERNAME}
-      - KC_BOOTSTRAP_ADMIN_PASSWORD=${KC_BOOTSTRAP_ADMIN_PASSWORD}
-      - KC_HOSTNAME=localhost
-      - KC_HTTP_ENABLED=true
-    ports:
-      - '8080:8080'
-    depends_on:
-      - db
-    command: start-dev
   db:
     image: postgres:15
     environment:
@@ -32,110 +16,62 @@ services:
       - POSTGRES_PASSWORD=${APP_POSTGRES_PASSWORD}
     volumes:
       - app_data:/var/lib/postgresql/data
-  middleware:
-    build:
-      context: ./middleware
-      dockerfile: Dockerfile
-    ports:
-      - '3000:3000'
-    environment:
-      - KEYCLOAK_URL=http://keycloak:8080
-      - KEYCLOAK_REALM=myapp-realm
-      - KEYCLOAK_CLIENT=middleware
-    depends_on:
-      - keycloak
-  server1:
+  auth:
     build:
       context: ./auth
       dockerfile: Dockerfile
     ports:
       - '5000:5000'
     environment:
-      - KEYCLOAK_URL=http://keycloak:8080
-      - KEYCLOAK_REALM=myapp-realm
+      # ...add any required env vars for auth backend...
     depends_on:
-      - middleware
-  server2:
+      - postgres-app
+  ngo:
     build:
-      context: ./ngo
+      context: ./ngo-backend
       dockerfile: Dockerfile
-    ports:
-      - '5002:5002'
     environment:
-      - KEYCLOAK_URL=http://keycloak:8080
-      - KEYCLOAK_REALM=myapp-realm
       - DATABASE_URL=postgresql://${APP_POSTGRES_USER}:${APP_POSTGRES_PASSWORD}@postgres-app:5432/${APP_POSTGRES_DB}?schema=public
     depends_on:
-      - middleware
-  server3:
+      - postgres-app
+  school-backend:
     build:
-      context: ./client-backend
+      context: ./school-backend
       dockerfile: Dockerfile
-    ports:
-      - '5001:5001'
     environment:
-      - KEYCLOAK_URL=http://keycloak:8080
-      - KEYCLOAK_REALM=myapp-realm
       - GOOGLE_BOOKS_API_KEY=${GOOGLE_BOOKS_API_KEY}
       - DATABASE_URL=postgresql://${APP_POSTGRES_USER}:${APP_POSTGRES_PASSWORD}@postgres-app:5432/${APP_POSTGRES_DB}?schema=public
       - NODE_ENV=development
     depends_on:
-      - middleware
       - postgres-app
-  server4:
+  donor-backend:
     build:
       context: ./donor-backend
       dockerfile: Dockerfile
-    ports:
-      - '5003:5003'
     environment:
-      - KEYCLOAK_URL=http://keycloak:8080
-      - KEYCLOAK_REALM=myapp-realm
       - DATABASE_URL=postgresql://${APP_POSTGRES_USER}:${APP_POSTGRES_PASSWORD}@postgres-app:5432/${APP_POSTGRES_DB}?schema=public
     depends_on:
       postgres-app:
         condition: service_healthy
-      middleware:
-        condition: service_started
-  server5:
+  batch-process:
     build:
       context: ./batch-process
       dockerfile: Dockerfile
-    ports:
-      - '5004:5004'
     environment:
-      - KEYCLOAK_URL=http://keycloak:8080
-      - KEYCLOAK_REALM=myapp-realm
       - DATABASE_URL=postgresql://${APP_POSTGRES_USER}:${APP_POSTGRES_PASSWORD}@postgres-app:5432/${APP_POSTGRES_DB}?schema=public
       - SYSTEM_TOKEN=${SYSTEM_TOKEN}
     depends_on:
-      - middleware
       - postgres-app
-  server6:
+  message-backend:
     build:
-      context: ./message-backend
+      context: ./messaging-job
       dockerfile: Dockerfile
-    ports:
-      - '5005:5005'
     environment:
-      - KEYCLOAK_URL=http://keycloak:8080
-      - KEYCLOAK_REALM=myapp-realm
       - EMAIL_USER=${EMAIL_USER}
       - EMAIL_PASS=${EMAIL_PASS}
       - PORT=5005
     depends_on:
-      - middleware
-  server7:
-    build:
-      context: ./placeholder
-      dockerfile: Dockerfile
-    ports:
-      - '5010:5010'
-    environment:
-      - KEYCLOAK_URL=http://keycloak:8080
-      - KEYCLOAK_REALM=myapp-realm
-    depends_on:
-      - middleware
+      - postgres-app
 volumes:
   postgres_data:
   app_data:

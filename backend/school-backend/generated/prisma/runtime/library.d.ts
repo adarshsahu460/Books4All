@@ -1320,7 +1320,7 @@ export declare type Exact<A, W> = (A extends unknown ? (W extends A ? {
     [K in keyof A]: Exact<A[K], W[K]>;
 } : W) : never) | (A extends Narrowable ? A : never);
 
-/**
+ /**
  * Defines Exception.
  *
  * string or an object with one of (message or name or code) and optional stack

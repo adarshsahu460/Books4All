@@ -5,37 +5,12 @@ const makeWASocket = require('@whiskeysockets/baileys').default;
 const { useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 const nodemailer = require('nodemailer');
-const jwt = require('jsonwebtoken');
-const jwksClient = require('jwks-rsa');
 
 const app = express();
 const port = 5005;
 
 app.use(cors({ origin: '*' }));
 app.use(express.json());
-
-// JWT validation middleware
-const client = jwksClient({
-  jwksUri: `${process.env.KEYCLOAK_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/certs`,
-});
-
-function getKey(header, callback) {
-  client.getSigningKey(header.kid, (err, key) => {
-    const signingKey = key?.publicKey || key?.rsaPublicKey;
-    callback(null, signingKey);
-  });
-}
-
-const verifyToken = (req, res, next) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return res.status(401).send('No token provided');
-  
-  jwt.verify(token, getKey, { algorithms: ['RS256'] }, (err, decoded) => {
-    if (err) return res.status(401).send('Invalid token');
-    req.user = decoded;
-    next();
-  });
-};
 
 let sock;
 
@@ -95,7 +70,7 @@ async function sendEmails(emailList, subject, message) {
     }
 }
 
-app.post('/send-messages', verifyToken, async (req, res) => {
+app.post('/send-messages', async (req, res) => {
     const { numbers, emails, messages, subject } = req.body;
 
     if (!numbers || !Array.isArray(numbers) || numbers.length === 0) {
@@ -135,7 +110,7 @@ app.post('/send-messages', verifyToken, async (req, res) => {
     }
 });
 
-app.get('/test', verifyToken, (req, res) => {
+app.get('/test', (req, res) => {
     res.status(200).send('Server is running well');
 });
 

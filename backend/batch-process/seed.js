@@ -87,8 +87,8 @@ async function main() {
     if (donor && client && ngo) {
         await prisma.transactionTable.create({
             data: {
-                donor_id: donor.id,
-                client_id: client.id,
+                donorBookId: donorBook.id,
+                clientBookId: clientBook.id,
                 NGO_id: ngo.id,
                 qty: 3,
                 status: "pending"
